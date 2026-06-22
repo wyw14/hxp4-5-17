@@ -1,5 +1,5 @@
 import { questionBank, modelDescriptions, type Question } from '../data/questionBank';
-import { SeededRandom, generateSeed } from '../utils/random';
+import { SeededRandom, generateSeed, encodeReplayCode, decodeReplayCode } from '../utils/random';
 import { OrigamiSVG } from '../components/OrigamiSVG';
 import { Model3DViewer } from '../components/Model3DViewer';
 import { FoldStateManager } from './FoldStateManager';
@@ -17,6 +17,7 @@ export class OrigamiGame {
   private container: HTMLElement;
   private state: GameState;
   private seed: number;
+  private replayCode: string;
   private rng: SeededRandom;
   private questionPool: Question[] = [];
   private currentQuestionIndex: number = 0;
@@ -30,8 +31,10 @@ export class OrigamiGame {
   private resetBtn: HTMLButtonElement | null = null;
   private hintBtn: HTMLButtonElement | null = null;
   private nextBtn: HTMLButtonElement | null = null;
+  private copyCodeBtn: HTMLButtonElement | null = null;
+  private loadCodeBtn: HTMLButtonElement | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, customSeed?: number) {
     this.container = container;
     this.state = {
       currentQuestion: null,
@@ -41,7 +44,8 @@ export class OrigamiGame {
       selectedModelId: null,
       gameStatus: 'idle'
     };
-    this.seed = generateSeed();
+    this.seed = customSeed ?? generateSeed();
+    this.replayCode = encodeReplayCode(this.seed);
     this.rng = new SeededRandom(this.seed);
     this.questionPool = this.rng.shuffle([...questionBank]);
 
@@ -67,6 +71,18 @@ export class OrigamiGame {
               <span class="stat-label">步数</span>
               <span class="stat-value" id="steps-display">0/0</span>
             </span>
+          </div>
+        </div>
+
+        <div class="replay-code-section">
+          <div class="replay-code-display">
+            <span class="replay-label">🏆 局面复现码：</span>
+            <span class="replay-code" id="replay-code-display">${this.replayCode}</span>
+            <button class="btn btn-small" id="copy-code-btn" title="复制复现码">📋 复制</button>
+          </div>
+          <div class="replay-code-input">
+            <input type="text" id="replay-code-input" placeholder="输入复现码" maxlength="10" />
+            <button class="btn btn-small" id="load-code-btn">🎮 加载</button>
           </div>
         </div>
 
@@ -105,11 +121,22 @@ export class OrigamiGame {
     this.resetBtn = this.container.querySelector('#reset-btn');
     this.hintBtn = this.container.querySelector('#hint-btn');
     this.nextBtn = this.container.querySelector('#next-btn');
+    this.copyCodeBtn = this.container.querySelector('#copy-code-btn');
+    this.loadCodeBtn = this.container.querySelector('#load-code-btn');
 
     this.submitBtn?.addEventListener('click', () => this.checkAnswer());
     this.resetBtn?.addEventListener('click', () => this.resetFolds());
     this.hintBtn?.addEventListener('click', () => this.showHint());
     this.nextBtn?.addEventListener('click', () => this.nextQuestion());
+    this.copyCodeBtn?.addEventListener('click', () => this.copyReplayCode());
+    this.loadCodeBtn?.addEventListener('click', () => this.loadReplayCode());
+
+    const codeInput = this.container.querySelector('#replay-code-input') as HTMLInputElement;
+    codeInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        this.loadReplayCode();
+      }
+    });
   }
 
   private startGame(): void {
@@ -425,6 +452,59 @@ export class OrigamiGame {
     if (resultEl) {
       resultEl.style.display = 'none';
     }
+  }
+
+  private async copyReplayCode(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.replayCode);
+      this.showMessage(`✅ 复现码已复制：${this.replayCode}`, 'success');
+    } catch {
+      const codeDisplay = this.container.querySelector('#replay-code-display');
+      if (codeDisplay) {
+        const range = document.createRange();
+        range.selectNodeContents(codeDisplay);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        document.execCommand('copy');
+        selection?.removeAllRanges();
+        this.showMessage(`✅ 复现码已复制：${this.replayCode}`, 'success');
+      }
+    }
+  }
+
+  private loadReplayCode(): void {
+    const input = this.container.querySelector('#replay-code-input') as HTMLInputElement;
+    if (!input) return;
+
+    const code = input.value.trim();
+    if (!code) {
+      this.showMessage('请输入复现码', 'error');
+      return;
+    }
+
+    const seed = decodeReplayCode(code);
+    if (seed === null) {
+      this.showMessage('无效的复现码，请检查输入', 'error');
+      return;
+    }
+
+    this.seed = seed;
+    this.replayCode = encodeReplayCode(seed);
+    this.rng = new SeededRandom(seed);
+    this.questionPool = this.rng.shuffle([...questionBank]);
+    this.currentQuestionIndex = 0;
+    this.state.score = 0;
+    this.state.level = 1;
+
+    const codeDisplay = this.container.querySelector('#replay-code-display');
+    if (codeDisplay) {
+      codeDisplay.textContent = this.replayCode;
+    }
+
+    input.value = '';
+    this.showMessage(`🎮 已加载复现码：${this.replayCode}`, 'success');
+    this.startGame();
   }
 
   getState(): GameState {

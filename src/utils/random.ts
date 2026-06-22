@@ -41,3 +41,30 @@ export function hashStringToSeed(str: string): number {
   }
   return Math.abs(hash) % 100000;
 }
+
+const REPLAY_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const CODE_BASE = REPLAY_CODE_CHARS.length;
+
+export function encodeReplayCode(seed: number): string {
+  let num = Math.abs(seed) % 100000;
+  let code = '';
+  while (num > 0 || code.length < 4) {
+    code = REPLAY_CODE_CHARS[num % CODE_BASE] + code;
+    num = Math.floor(num / CODE_BASE);
+  }
+  return code;
+}
+
+export function decodeReplayCode(code: string): number | null {
+  const cleanCode = code.toUpperCase().replace(/[^23456789ABCDEFGHJKLMNPQRSTUVWXYZ]/g, '');
+  if (cleanCode.length === 0) return null;
+  
+  let seed = 0;
+  for (let i = 0; i < cleanCode.length; i++) {
+    const char = cleanCode[i];
+    const index = REPLAY_CODE_CHARS.indexOf(char);
+    if (index === -1) return null;
+    seed = seed * CODE_BASE + index;
+  }
+  return seed % 100000;
+}
